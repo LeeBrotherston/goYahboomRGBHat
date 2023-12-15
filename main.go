@@ -38,6 +38,7 @@ type RGBHat struct {
 	lastFanSpeed uint8
 	nextFanSpeed uint8
 	temp         float64
+	powerOK      bool
 }
 
 // updateFan checks the current temp and updates the fan speed accordingly
@@ -47,7 +48,12 @@ func (h *RGBHat) updateFan() error {
 	if err != nil {
 		log.Printf("problem getting temp, err=[%s]", err)
 	} else {
-		log.Printf("temp is: %f, current fan speed: %d, next fan speed: %d\n", h.temp, h.lastFanSpeed, h.nextFanSpeed)
+		log.Printf("temp is: %f, power ok: %t", h.temp, h.powerOK)
+	}
+
+	h.powerOK, err = powerOK()
+	if err != nil {
+		log.Printf("problem getting power status, err=[%s]", err)
 	}
 
 	if h.temp <= 36 {
@@ -64,6 +70,7 @@ func (h *RGBHat) updateFan() error {
 
 	// Check that we're not wasting time setting the fan to the speed it's already at
 	if h.lastFanSpeed != h.nextFanSpeed {
+		log.Printf("setting fan speed to: %d", h.nextFanSpeed)
 		err = h.setFanSpeed()
 	}
 	return err
@@ -79,6 +86,10 @@ func (h *RGBHat) init() error {
 	h.bus = conn
 	h.i2CAddr = I2CAddr
 	h.lastFanSpeed = FanInvalid
+	h.powerOK, err = powerOK()
+	if err != nil {
+		log.Printf("non fatal error, getting initial power status, err=[%s]", err)
+	}
 
 	err = h.bus.WriteReg(h.i2CAddr, RegRGBMode, ModeBreathing)
 	if err != nil {
@@ -99,22 +110,50 @@ func (h *RGBHat) setFanSpeed() error {
 	if err != nil {
 		return err
 	}
+	if !h.powerOK {
+		log.Printf("alarm on pi power supply, disabling LEDs to reduce consumption")
+		err = h.bus.WriteReg(h.i2CAddr, RegRGBOff, RGBOff)
+		if err != nil {
+			log.Printf("non fatal error, attempting to disable RGB LEDs, err=[%s]", err)
+		}
+	}
 	h.lastFanSpeed = h.nextFanSpeed
 	return nil
 }
 
 // getTemp gets the current CPU temp via /sys/class/thermal/thermal_zone0/temp
 func getTemp() (float64, error) {
-	fileContent, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp")
+	tempInt, err := getSysInt(cpuTempHwMon)
+	if err != nil {
+		return 0, err
+	}
+
+	return float64(tempInt / 1000), nil
+}
+
+func powerOK() (bool, error) {
+	alarm, err := getSysInt(powerHwMon)
+	if err != nil {
+		return false, err
+	}
+
+	if alarm == 0 {
+		return true, nil
+	}
+	return false, nil
+}
+
+func getSysInt(path string) (int, error) {
+	fileContent, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
 	}
 
 	fileContent = []byte(strings.TrimRight(string(fileContent), "\n"))
 
-	tempInt, err := strconv.Atoi(string(fileContent))
+	sysInt, err := strconv.Atoi(string(fileContent))
 	if err != nil {
 		return 0, err
 	}
-	return float64(tempInt / 1000), nil
+	return sysInt, nil
 }

@@ -1,5 +1,8 @@
 package main
 
+const powerHwMon = "/sys/devices/platform/soc/soc:firmware/raspberrypi-hwmon/hwmon/hwmon1/in0_lcrit_alarm"
+const cpuTempHwMon = "/sys/class/thermal/thermal_zone0/temp"
+
 // Just a bunch of constants to make the code more readable when setting
 // register values, values from:
 // http://www.yahboom.net/xiazai/Raspberry_Pi_RGB_Cooling_HAT/I2C%20Communication%20Protocol.pdf
