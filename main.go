@@ -33,8 +33,8 @@ func main() {
 }
 
 type RGBHat struct {
-	i2CAddr      uint8
-	bus          *smbus.Conn
+	i2CAddr uint8
+	//bus          *smbus.Conn
 	lastFanSpeed uint8
 	nextFanSpeed uint8
 	temp         float64
@@ -78,12 +78,11 @@ func (h *RGBHat) updateFan() error {
 
 // init initializes the RGBHat struct
 func (h *RGBHat) init() error {
-	conn, err := smbus.Open(1, I2CAddr)
+	conn, err := getBusConn()
 	if err != nil {
 		return err
 	}
 
-	h.bus = conn
 	h.i2CAddr = I2CAddr
 	h.lastFanSpeed = FanInvalid
 	h.powerOK, err = powerOK()
@@ -91,34 +90,40 @@ func (h *RGBHat) init() error {
 		log.Printf("non fatal error, getting initial power status, err=[%s]", err)
 	}
 
-	err = h.bus.WriteReg(h.i2CAddr, RegRGBMode, ModeBreathing)
+	err = conn.WriteReg(h.i2CAddr, RegRGBMode, ModeBreathing)
 	if err != nil {
 		log.Printf("non fatal error, setting RGB scheme, err=[%s]", err)
 	}
 
-	err = h.bus.WriteReg(h.i2CAddr, RegRGBBreathScheme, BreathPurple)
+	err = conn.WriteReg(h.i2CAddr, RegRGBBreathScheme, BreathPurple)
 	if err != nil {
 		log.Printf("non fatal error, setting RGB colour, err=[%s]", err)
 	}
 
-	return nil
+	err = conn.Close()
+	return err
 }
 
 // setFanSpeed sets the fan speed register based on details on the RGBHat struct
 func (h *RGBHat) setFanSpeed() error {
-	err := h.bus.WriteReg(h.i2CAddr, RegFanSpeed, h.nextFanSpeed)
+	conn, err := getBusConn()
+	if err != nil {
+		return err
+	}
+	err = conn.WriteReg(h.i2CAddr, RegFanSpeed, h.nextFanSpeed)
 	if err != nil {
 		return err
 	}
 	if !h.powerOK {
 		log.Printf("alarm on pi power supply, disabling LEDs to reduce consumption")
-		err = h.bus.WriteReg(h.i2CAddr, RegRGBOff, RGBOff)
+		err = conn.WriteReg(h.i2CAddr, RegRGBOff, RGBOff)
 		if err != nil {
 			log.Printf("non fatal error, attempting to disable RGB LEDs, err=[%s]", err)
 		}
 	}
 	h.lastFanSpeed = h.nextFanSpeed
-	return nil
+	err = conn.Close()
+	return err
 }
 
 // getTemp gets the current CPU temp via /sys/class/thermal/thermal_zone0/temp
@@ -156,4 +161,9 @@ func getSysInt(path string) (int, error) {
 		return 0, err
 	}
 	return sysInt, nil
+}
+
+func getBusConn() (*smbus.Conn, error) {
+	conn, err := smbus.Open(1, I2CAddr)
+	return conn, err
 }
